@@ -1,221 +1,353 @@
-# 🏦 Kafka Banking Microservices
+# 🏦 Kafka Event-Driven Microservices - Projet DevOps
 
-Mini projet bancaire avec **KafkaJS** et **Hono** - 3 microservices communiquant via Kafka en temps réel.
+**Système d'information événementiel** en Node.js/Hono démontrant l'asynchronisme via Apache Kafka entre microservices avec résilience, DLQ et tests d'intégration.
 
-![Architecture](https://img.shields.io/badge/Architecture-Microservices-blue) ![Kafka](https://img.shields.io/badge/Kafka-3.6-orange) ![Node.js](https://img.shields.io/badge/Node.js-18+-green) ![Hono](https://img.shields.io/badge/Hono-3.x-purple)
+![Architecture](https://img.shields.io/badge/Architecture-Event_Driven-blue) ![Kafka](https://img.shields.io/badge/Kafka-3.6-orange) ![Node.js](https://img.shields.io/badge/Node.js-18+-green) ![Hono](https://img.shields.io/badge/Hono-3.x-purple) ![Tests](https://img.shields.io/badge/Tests-Jest+Testcontainers-red)
 
-## 🏗️ Architecture
+## 🏗️ Architecture Event-Driven
 
 ```mermaid
-graph LR
-    A[accounts-svc :3001] -->|accounts.created| B[payments-svc]
-    B -->|payments.processed| C[notifications-svc]
-    A -->|HTTP GET /| D[Client]
+graph TB
+    subgraph "Client Layer"
+        C[Client HTTP]
+    end
+    
+    subgraph "Service Layer"
+        CS[commande-service :3001]
+        PS[paiement-service]
+        SS[suivi-service :3002]
+    end
+    
+    subgraph "Kafka Topics (3 partitions each)"
+        T1[orders.created]
+        T2[payments.authorized]
+        T3[payments.rejected]
+        T4[orders.dlq]
+        T5[payments.dlq]
+    end
+    
+    C -->|POST /orders| CS
+    C -->|GET /orders/:id/status| SS
+    
+    CS -->|OrderCreated| T1
+    T1 -->|Consumer| PS
+    PS -->|PaymentAuthorized| T2
+    PS -->|PaymentRejected| T3
+    PS -.->|Poison Messages| T5
+    
+    T2 --> SS
+    T3 --> SS
+    T4 -.-> SS
+    
+    style CS fill:#e1f5fe
+    style PS fill:#fff3e0
+    style SS fill:#f3e5f5
+    style T4 fill:#ffebee
+    style T5 fill:#ffebee
 ```
 
-### 🔧 Services
-- **🏢 accounts-svc** (port 3001): API REST Hono + producteur d'événements
-- **💳 payments-svc**: Traitement des paiements en temps réel  
-- **📱 notifications-svc**: Système de notifications push
+## 🎯 Fonctionnalités Implémentées
 
-## 🚀 Démarrage rapide
+### ✅ Services Microservices
+- **commande-service** : API REST POST `/orders` → publie `OrderCreated`
+- **paiement-service** : Consomme `OrderCreated` → publie `PaymentAuthorized`/`PaymentRejected`
+- **suivi-service** : Agrège les événements → API GET `/orders/{id}/status`
 
-### Prérequis
-- Node.js 18+ 
-- Docker & Docker Compose
-- npm ou yarn
+### ✅ Kafka Configuration Avancée
+- **Topics partitionnés** (3 partitions avec clé = orderId)
+- **Producteurs idempotents** (`acks=all`, `enable.idempotence=true`)
+- **Consumers avec commit après traitement**
+- **Dead Letter Queues (DLQ)** pour messages poison
 
-### Installation
+### ✅ Résilience & Reliability
+- **Retries avec backoff exponentiel**
+- **Idempotence applicative** (déduplication par eventId)
+- **Gestion des erreurs** avec circuit breaker
+- **Monitoring des événements**
 
-```bash
-# 1. Cloner et installer
-git clone <repo>
-cd kafka-banking
-npm install
+### ✅ Tests d'Intégration
+- **Testcontainers** pour Kafka isolé
+- **Tests bout-en-bout** du flux complet
+- **Tests de déduplication** et résilience
 
-# 2. Lancer l'infrastructure
-npm run kafka:up
+## 📋 Schémas d'Événements
 
-# 3. Attendre que Kafka soit prêt (10-15s) puis créer les topics
-npm run topics
-
-# 4. Démarrer les microservices
-npm run dev:accounts        # Terminal 1 (API HTTP)
-npm run dev:payments        # Terminal 2 (Consumer/Producer)  
-npm run dev:notifications   # Terminal 3 (Consumer)
-```
-
-### ✅ Vérification
-
-```bash
-# Test de l'API
-curl http://localhost:3001/
-# → "hello world"
-
-# Observer les logs en temps réel dans chaque terminal
-# accounts-svc  : 📤 accounts → produced: account-X
-# payments-svc  : 📥 payments ⬅ consumed: account-X → 📤 payment processed  
-# notifications : 🔔 NOTIFICATION: Account account-X payment PAID
-```
-
-## 📊 Flux de données détaillé
-
-### 1. Création de compte (accounts-svc)
-```javascript
-// Événement publié toutes les 3s
+### OrderCreated
+```json
 {
-  "accountId": "account-1",
-  "userId": "user-742", 
+  "eventId": "order-123-1640995200000",
+  "orderId": "order-123", 
+  "userId": "user-456",
+  "amount": 99.99,
+  "items": ["item1", "item2"],
+  "status": "CREATED",
   "createdAt": "2024-01-15T10:30:00.000Z"
 }
 ```
 
-### 2. Traitement paiement (payments-svc)
-```javascript
-// Consomme accounts.created → publie payments.processed
+### PaymentAuthorized
+```json
 {
-  "accountId": "account-1",
-  "status": "PAID",
-  "processedAt": "2024-01-15T10:30:00.500Z"
+  "eventId": "payment-order-123-1640995201000",
+  "orderId": "order-123",
+  "userId": "user-456", 
+  "amount": 99.99,
+  "status": "AUTHORIZED",
+  "authorizationCode": "AUTH-1640995201000",
+  "processedAt": "2024-01-15T10:30:01.000Z"
 }
 ```
 
-### 3. Notification (notifications-svc)
-```bash
-🔔 NOTIFICATION: Account account-1 payment PAID at 2024-01-15T10:30:00.500Z
+### PaymentRejected
+```json
+{
+  "eventId": "payment-order-124-1640995202000", 
+  "orderId": "order-124",
+  "userId": "user-789",
+  "amount": 150.00,
+  "status": "REJECTED", 
+  "rejectionReason": "Insufficient funds",
+  "processedAt": "2024-01-15T10:30:02.000Z"
+}
 ```
 
-## 🛠️ Commandes disponibles
+## 🚀 Démarrage Rapide
 
-| Commande | Description |
-|----------|-------------|
-| `npm run dev:accounts` | Lance le service comptes (HTTP + Kafka) |
-| `npm run dev:payments` | Lance le service paiements (Kafka only) |
-| `npm run dev:notifications` | Lance le service notifications (Kafka only) |
-| `npm run topics` | Crée les topics Kafka |
-| `npm run kafka:up` | Démarre Kafka (Docker) |
-| `npm run kafka:down` | Arrête Kafka et nettoie |
+### Prérequis
+- **Node.js 18+**
+- **Docker & Docker Compose** 
+- **npm** ou **pnpm**
 
-## 📋 Topics Kafka
+### Installation & Lancement
 
-| Topic | Partitions | Description |
-|-------|------------|-------------|
-| `accounts.created` | 3 | Nouveaux comptes créés |
-| `payments.processed` | 3 | Paiements traités |
-
-## 🐛 Troubleshooting
-
-### 🔴 Kafka ne démarre pas
 ```bash
-# Vérifier Docker
-docker ps
-
-# Nettoyer et relancer  
-npm run kafka:down
-docker system prune -f
-npm run kafka:up
-```
-
-### 🔴 Erreurs de connexion "ENOTFOUND"
-```bash
-# Attendre que Kafka soit complètement démarré
-sleep 15
-npm run topics
-
-# Vérifier les logs
-docker logs kafka
-```
-
-### 🔴 Topics non créés / "This server does not host this topic-partition"
-```bash
-# Recréer les topics
-npm run topics
-
-# Vérifier manuellement
-docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --list
-docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic accounts.created
-```
-
-### 🔴 Service accounts ne démarre pas
-```bash
-# Vérifier les dépendances
+# 1. Installation des dépendances
 npm install
 
-# Vérifier le port 3001
-lsof -i :3001
+# 2. Démarrer Kafka (mode KRaft, sans ZooKeeper)
+npm run kafka:up
+
+# 3. Attendre 10-15s puis créer les topics partitionnés
+npm run topics
+
+# 4. Lancer les microservices (3 terminaux séparés)
+npm run dev:commande     # Terminal 1 - API REST :3001
+npm run dev:paiement     # Terminal 2 - Consumer/Producer
+npm run dev:suivi        # Terminal 3 - API Agrégation :3002
 ```
 
-## 🔍 Monitoring & Debug
+### 🧪 Tests & Validation
 
-### Vérifier les topics
 ```bash
-# Lister tous les topics
+# Tests unitaires (résilience, déduplication)
+npm test
+
+# Tests d'intégration avec Testcontainers
+npm run test:integration
+
+# Test manuel du flux complet
+curl -X POST http://localhost:3001/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "user-123",
+    "amount": 99.99, 
+    "items": ["laptop", "mouse"]
+  }'
+
+# Vérifier le statut (attendre 2-3s)
+curl http://localhost:3002/orders/order-1/status
+```
+
+### 📊 Monitoring & Debug
+
+```bash
+# Vérifier les topics et partitions
 docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --list
+docker exec kafka kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic orders.created
 
 # Consumer en ligne de commande pour debug
 docker exec -it kafka kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 \
-  --topic accounts.created \
+  --topic orders.created \
+  --from-beginning \
+  --property print.headers=true
+
+# Vérifier les consumer groups
+docker exec kafka kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe --group paiement-svc
+
+# Monitoring des DLQ
+docker exec -it kafka kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic payments.dlq \
   --from-beginning
 ```
 
-### Vérifier les consumer groups
+## 📁 Structure du Projet
+
+```
+kafka-microservices/
+├── 📁 services/
+│   ├── 🏢 commande/index.js        # Service commandes (POST /orders)
+│   ├── 💳 paiement/index.js        # Service paiements (Kafka only)
+│   ├── 📊 suivi/index.js           # Service suivi (GET /orders/:id/status)
+│   └── 🔧 shared/
+│       ├── kafka.js                # Configuration Kafka idempotente
+│       ├── dlq.js                  # Dead Letter Queue utils
+│       └── resilience.js           # Backoff, déduplication, retry
+├── 🧪 tests/
+│   ├── integration.test.js         # Tests Testcontainers
+│   └── unit.test.js                # Tests unitaires résilience
+├── 🐳 bootstrap/create-topics.js   # Création topics partitionnés
+├── 🐋 docker-compose.yml           # Kafka KRaft (sans ZooKeeper)
+└── 📋 README.md                    # Documentation complète
+```
+
+## 🎛️ Configuration Kafka Production
+
+### Topics Configuration
+- **3 partitions** par topic (clé = orderId)
+- **Retention : 7 jours** (données business)
+- **DLQ Retention : 30 jours** (debug)
+- **Cleanup policy : delete**
+
+### Producer Settings
+```javascript
+{
+  maxInFlightRequests: 1,
+  idempotent: true,
+  acks: 'all',           // Durabilité garantie
+  retries: 5,
+  retry: {
+    initialRetryTime: 100,
+    maxRetryTime: 30000
+  }
+}
+```
+
+### Consumer Settings
+```javascript
+{
+  groupId: 'service-name',
+  sessionTimeout: 30000,
+  heartbeatInterval: 3000,
+  allowAutoTopicCreation: false
+}
+```
+
+## 🔧 APIs Disponibles
+
+### Commande Service (:3001)
+- `POST /orders` - Créer une commande
+- `GET /` - Health check
+
+### Suivi Service (:3002) 
+- `GET /orders/:orderId/status` - Statut agrégé d'une commande
+- `GET /orders` - Liste toutes les commandes
+- `GET /` - Health check
+
+### Exemples de Réponses
+
+**POST /orders** (201 Created)
+```json
+{
+  "orderId": "order-1",
+  "eventId": "order-1-1640995200000", 
+  "status": "created",
+  "message": "Order created successfully"
+}
+```
+
+**GET /orders/order-1/status** (200 OK)
+```json
+{
+  "orderId": "order-1",
+  "status": "PAYMENT_AUTHORIZED",
+  "details": {
+    "userId": "user-123",
+    "amount": 99.99,
+    "items": ["laptop", "mouse"],
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "paymentStatus": "AUTHORIZED", 
+    "authorizationCode": "AUTH-1640995201000",
+    "authorizedAt": "2024-01-15T10:30:01.000Z"
+  },
+  "events": [
+    {"type": "OrderCreated", "timestamp": "2024-01-15T10:30:00.000Z"},
+    {"type": "PaymentAuthorized", "timestamp": "2024-01-15T10:30:01.000Z"}
+  ],
+  "lastUpdated": "2024-01-15T10:30:01.000Z"
+}
+```
+
+## 🛠️ Commandes Utiles
+
+| Commande | Description |
+|----------|-------------|
+| `npm run dev:commande` | Lance commande-service (HTTP :3001) |
+| `npm run dev:paiement` | Lance paiement-service (Kafka consumer) |
+| `npm run dev:suivi` | Lance suivi-service (HTTP :3002 + Kafka) |
+| `npm run topics` | Crée topics Kafka partitionnés |
+| `npm run kafka:up` | Démarre Kafka (Docker) |
+| `npm run kafka:down` | Arrête Kafka et nettoie |
+| `npm test` | Tests unitaires |
+| `npm run test:integration` | Tests avec Testcontainers |
+
+## 🔍 Troubleshooting
+
+### Kafka ne démarre pas
 ```bash
-docker exec kafka kafka-consumer-groups.sh \
-  --bootstrap-server localhost:9092 \
-  --list
-
-docker exec kafka kafka-consumer-groups.sh \
-  --bootstrap-server localhost:9092 \
-  --describe --group payments-svc
+npm run kafka:down
+docker system prune -f  
+npm run kafka:up
 ```
 
-## 📁 Structure du projet
-
-```
-kafka-banking/
-├── 📄 docker-compose.yml      # Infrastructure Kafka
-├── 📦 package.json           # Dependencies & scripts
-├── 📋 README.md              # Documentation
-├── 🔧 bootstrap/
-│   └── create-topics.js      # Création topics Kafka
-└── 🏢 services/
-    ├── 🔧 shared/
-    │   └── kafka.js          # Utilitaires Kafka partagés
-    ├── 🏦 accounts/
-    │   └── index.js          # Service comptes (Hono + Kafka)
-    ├── 💳 payments/ 
-    │   └── index.js          # Service paiements (Kafka only)
-    └── 📱 notifications/
-        └── index.js          # Service notifications (Kafka only)
-```
-
-## 🧪 Développement
-
-### Variables d'environnement
-
-Créer un fichier `.env` (optionnel) :
-```env
-KAFKA_BROKERS=localhost:9092
-CLIENT_ID=banking-app
-```
-
-### Arrêt propre des services
-Les services gèrent `SIGINT` et `SIGTERM` pour une déconnexion propre de Kafka.
-
+### Topics non créés
 ```bash
-# Ctrl+C dans chaque terminal pour un arrêt propre
+# Attendre 15s puis recréer
+sleep 15 && npm run topics
 ```
 
-## 🎯 Prochaines étapes
+### Messages en DLQ
+```bash
+# Voir les messages poison
+docker exec -it kafka kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic payments.dlq \
+  --from-beginning \
+  --property print.headers=true
+```
 
-- [ ] Ajouter des tests unitaires (Jest)
-- [ ] Implémenter un schema registry (Avro/JSON Schema)
-- [ ] Ajouter des métriques (Prometheus)
-- [ ] Dockeriser les microservices
-- [ ] Ajouter une API Gateway
-- [ ] Persistence en base de données
+### Tests d'intégration échouent
+```bash
+# S'assurer que Docker fonctionne
+docker version
+
+# Nettoyer les containers
+docker container prune -f
+```
+
+## 📈 Métriques & Observabilité
+
+Le système trace automatiquement :
+- **Déduplication** : Cache TTL des eventId
+- **Retries** : Tentatives avec backoff exponentiel  
+- **DLQ** : Messages poison avec raison d'échec
+- **Partitioning** : Distribution par orderId
+- **Consumer lag** : Via consumer groups
+
+## 🎯 Prochaines Étapes (Roadmap)
+
+- [ ] **Schema Registry** (Avro/JSON Schema)
+- [ ] **Prometheus Metrics** (métriques business) 
+- [ ] **Kubernetes Deployment** (Helm charts)
+- [ ] **CQRS Event Store** (PostgreSQL)
+- [ ] **Saga Pattern** (orchestration complexe)
+- [ ] **OpenTelemetry** (tracing distribué)
 
 ---
 
-**🚀 Happy coding!** Pour toute question, vérifiez d'abord la section troubleshooting.
+**🚀 Projet DevOps complet** - Événementiel, Résilient, Testé et Monitoré !
+
+Pour toute question, vérifier d'abord la section troubleshooting ou consulter les logs des services.
