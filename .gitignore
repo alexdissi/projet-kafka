@@ -1,0 +1,12 @@
+...existing code...
+.claude
+./node_modules
+# Normalisation des patterns
+node_modules/
+# Fichiers d'environnement
+.env
+.env.local
+.env.development
+.env.production
+.env.tests
+.env.example
