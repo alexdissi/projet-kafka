@@ -1,0 +1,75 @@
+jmxUrl: service:jmx:rmi:///jndi/rmi://kafka:1099/jmxrmi
+ssl: false
+lowercaseOutputName: false
+lowercaseOutputLabelNames: false
+
+rules:
+  # Kafka Broker Metrics - Messages
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=MessagesInPerSec, topic=(.+)><>OneMinuteRate"
+    name: kafka_server_broker_topic_metrics_messages_in_per_sec
+    labels:
+      topic: "$1"
+    type: GAUGE
+
+  # Kafka Broker Metrics - Bytes
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec, topic=(.+)><>OneMinuteRate"
+    name: kafka_server_broker_topic_metrics_bytes_in_per_sec
+    labels:
+      topic: "$1"
+    type: GAUGE
+
+  - pattern: "kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec, topic=(.+)><>OneMinuteRate"
+    name: kafka_server_broker_topic_metrics_bytes_out_per_sec
+    labels:
+      topic: "$1"
+    type: GAUGE
+
+  # Kafka Server - Request metrics
+  - pattern: "kafka.server<type=RequestMetrics, name=RequestsPerSec, request=(.+)><>OneMinuteRate"
+    name: kafka_server_request_metrics_requests_per_sec
+    labels:
+      request: "$1"
+    type: GAUGE
+
+  # Kafka Server - Total time metrics
+  - pattern: "kafka.server<type=RequestMetrics, name=TotalTimeMs, request=(.+)><>Mean"
+    name: kafka_server_request_metrics_total_time_ms_mean
+    labels:
+      request: "$1"
+    type: GAUGE
+
+  # Kafka Network - NetworkProcessor
+  - pattern: "kafka.network<type=RequestMetrics, name=RequestQueueSize><>Value"
+    name: kafka_network_request_queue_size
+    type: GAUGE
+
+  # Kafka Log - LogSize
+  - pattern: "kafka.log<type=Size, name=Size, topic=(.+), partition=(.+)><>Value"
+    name: kafka_log_size
+    labels:
+      topic: "$1"
+      partition: "$2"
+    type: GAUGE
+
+  # Kafka Controller
+  - pattern: "kafka.controller<type=KafkaController, name=(.+)><>Value"
+    name: kafka_controller_$1
+    type: GAUGE
+
+  # JVM Metrics
+  - pattern: "java.lang<type=Memory><HeapMemoryUsage>used"
+    name: jvm_memory_heap_used
+    type: GAUGE
+
+  - pattern: "java.lang<type=Memory><NonHeapMemoryUsage>used"
+    name: jvm_memory_nonheap_used
+    type: GAUGE
+
+  - pattern: "java.lang<type=GarbageCollector, name=(.+)><CollectionCount>"
+    name: jvm_gc_collection_count
+    labels:
+      gc: "$1"
+    type: COUNTER
+
+  # Default - catch remaining metrics
+  - pattern: ".*"

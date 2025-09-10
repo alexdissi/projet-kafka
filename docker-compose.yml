@@ -1,10 +1,10 @@
-version: '3.8'
 services:
   kafka:
     image: bitnami/kafka:3.6
     container_name: kafka
     ports:
       - "9092:9092"
+      - "1099:1099"
     environment:
       # KRaft mode configuration
       KAFKA_CFG_NODE_ID: 0
@@ -16,6 +16,10 @@ services:
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
       # Disable auto topic creation
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # JMX Configuration pour monitoring
+      KAFKA_CFG_JMX_ENABLED: "true"
+      KAFKA_CFG_JMX_HOSTNAME: "localhost"
+      KAFKA_CFG_JMX_PORT: 1099
     volumes:
       - kafka_data:/bitnami/kafka
     healthcheck:

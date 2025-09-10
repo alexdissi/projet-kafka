@@ -1,9 +1,16 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { createConsumer } from '../shared/kafka.js';
+import { createMetricsMiddleware, createMetricsRoute, kafkaMessagesConsumed, createKafkaTimer } from '../shared/metrics.js';
 
 const app = new Hono();
 const consumer = createConsumer('suivi-svc');
+
+// Ajouter middleware de métriques
+app.use('*', createMetricsMiddleware('suivi'));
+
+// Ajouter route pour exposer les métriques Prometheus
+createMetricsRoute(app, 'suivi');
 
 // Store en mémoire pour l'agrégation des événements
 const orderStatuses = new Map(); // orderId -> { status, events[], lastUpdated }
@@ -105,12 +112,17 @@ async function startService() {
 
     await consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
+        const endTimer = createKafkaTimer(topic, 'suivi');
+        
         try {
           const eventData = JSON.parse(message.value.toString());
           const { orderId } = eventData;
           const eventId = message.headers?.eventId?.toString() || 'unknown';
           
           console.log(`📥 suivi ⬅ consumed: ${topic} for ${orderId} (partition ${partition})`);
+          
+          // Métriques de consommation
+          kafkaMessagesConsumed.inc({ topic, service: 'suivi' });
 
           // Initialiser l'entrée si elle n'existe pas
           if (!orderStatuses.has(orderId)) {
@@ -158,8 +170,11 @@ async function startService() {
             console.log(`⚠️ suivi → duplicate event ignored: ${eventId}`);
           }
 
+          endTimer(); // Fin du timer pour le processing
+
         } catch (error) {
           console.error('❌ Error processing suivi message:', error.message);
+          endTimer(); // Fin du timer même en cas d'erreur
         }
       }
     });

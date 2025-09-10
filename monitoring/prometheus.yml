@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'kafka-banking-monitor'
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus lui-même
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter (métriques système)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node_exporter:9100']
+
+  # JMX Exporter pour Kafka
+  - job_name: 'kafka-jmx'
+    static_configs:
+      - targets: ['kafka-jmx-exporter:5556']
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Services microservices
+  - job_name: 'microservices'
+    static_configs:
+      - targets: 
+          - 'host.docker.internal:3001'  # commande service
+          - 'host.docker.internal:3002'  # suivi service  
+          - 'host.docker.internal:3003'  # analyseur service
+          - 'host.docker.internal:3004'  # paiement service
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    params:
+      format: ['prometheus']

@@ -2,9 +2,16 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { createProducer } from '../shared/kafka.js';
 import { EventDeduplicator, withRetry, ExponentialBackoff } from '../shared/resilience.js';
+import { createMetricsMiddleware, createMetricsRoute, kafkaMessagesProduced, ordersTotal, orderAmount } from '../shared/metrics.js';
 
 const app = new Hono();
 const producer = createProducer();
+
+// Ajouter middleware de métriques
+app.use('*', createMetricsMiddleware('commande'));
+
+// Ajouter route pour exposer les métriques Prometheus
+createMetricsRoute(app, 'commande');
 
 let orderCounter = 1;
 const deduplicator = new EventDeduplicator();
@@ -63,6 +70,11 @@ app.post('/orders', async (c) => {
       });
       
       console.log(`📤 OrderCreated → produced: ${orderId} (eventId: ${eventId}) [attempt: ${attempt + 1}]`);
+      
+      // Métriques Prometheus
+      kafkaMessagesProduced.inc({ topic: 'orders.created', service: 'commande' });
+      ordersTotal.inc({ service: 'commande' });
+      orderAmount.observe({ service: 'commande' }, body.amount);
     }, 3, backoff);
     
     return c.json({ 

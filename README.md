@@ -124,17 +124,33 @@ graph TB
 # 1. Installation des dépendances
 npm install
 
-# 2. Démarrer Kafka (mode KRaft, sans ZooKeeper)
-npm run kafka:up
+# 2. Option A: Démarrage automatique complet (RECOMMANDÉ)
+npm start
+# Cette commande démarre automatiquement :
+# - Infrastructure complète (Kafka + Monitoring)
+# - Tous les microservices avec logs colorés
+# - Création des topics Kafka
 
-# 3. Attendre 10-15s puis créer les topics partitionnés
-npm run topics
+# 2. Option B: Démarrage manuel étape par étape
+npm run monitoring:up    # Kafka + Prometheus + Grafana
+npm run topics          # Créer les topics
+npm run start:all       # Tous les microservices en une fois
 
-# 4. Lancer les microservices (3 terminaux séparés)
-npm run dev:commande     # Terminal 1 - API REST :3001
-npm run dev:paiement     # Terminal 2 - Consumer/Producer
-npm run dev:suivi        # Terminal 3 - API Agrégation :3002
+# 2. Option C: Service par service (3+ terminaux)
+npm run kafka:up        # Kafka seulement
+npm run topics          # Topics
+npm run dev:commande    # Terminal 1 - API REST :3001
+npm run dev:paiement    # Terminal 2 - Consumer/Producer :3004
+npm run dev:suivi       # Terminal 3 - API Agrégation :3002
+npm run dev:analyseur   # Terminal 4 - Statistiques :3003
 ```
+
+### 📊 Accès aux Interfaces
+
+Après démarrage avec `npm start` :
+- **Grafana** : http://localhost:3000 (admin/admin)
+- **Prometheus** : http://localhost:9090  
+- **APIs Microservices** : http://localhost:3001, 3002, 3003, 3004
 
 ### 🧪 Tests & Validation
 

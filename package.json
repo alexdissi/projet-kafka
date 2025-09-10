@@ -8,9 +8,17 @@
     "dev:commande": "node services/commande/index.js",
     "dev:paiement": "node services/paiement/index.js",
     "dev:suivi": "node services/suivi/index.js",
+    "dev:analyseur": "node services/analyseur/index.js",
+    "start:all": "node start-all.js",
+    "start:complete": "node start-complete.js",
+    "start": "npm run start:complete",
     "topics": "node bootstrap/create-topics.js",
     "kafka:up": "docker compose up -d",
     "kafka:down": "docker compose down",
+    "monitoring:up": "docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d",
+    "monitoring:simple": "docker compose -f docker-compose.yml -f docker-compose.monitoring-simple.yml up -d",
+    "monitoring:down": "docker compose -f docker-compose.yml -f docker-compose.monitoring.yml down",
+    "setup": "npm run monitoring:up && sleep 10 && npm run topics",
     "test": "jest",
     "test:integration": "jest --testMatch='**/*.integration.test.js'"
   },
@@ -18,7 +26,8 @@
     "kafkajs": "^2.2.4",
     "hono": "^3.12.6",
     "@hono/node-server": "^1.8.2",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "prom-client": "^15.1.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

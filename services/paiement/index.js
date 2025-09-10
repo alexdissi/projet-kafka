@@ -1,10 +1,28 @@
+import { Hono } from 'hono';
+import { serve } from '@hono/node-server';
 import { createConsumer, createProducer } from '../shared/kafka.js';
 import { sendToDLQ, disconnectDLQ } from '../shared/dlq.js';
 import { EventDeduplicator, withRetry } from '../shared/resilience.js';
+import { createMetricsMiddleware, createMetricsRoute, kafkaMessagesProduced, kafkaMessagesConsumed, paymentsTotal, createKafkaTimer } from '../shared/metrics.js';
 
+const app = new Hono();
 const consumer = createConsumer('paiement-svc');
 const producer = createProducer();
 const deduplicator = new EventDeduplicator();
+
+// Ajouter middleware de métriques
+app.use('*', createMetricsMiddleware('paiement'));
+
+// Ajouter route pour exposer les métriques Prometheus
+createMetricsRoute(app, 'paiement');
+
+app.get('/', (c) => {
+  return c.text('Paiement Service API - Ready');
+});
+
+app.get('/health', (c) => {
+  return c.json({ status: 'healthy', service: 'paiement', timestamp: new Date().toISOString() });
+});
 
 // Simule la logique métier de paiement
 function processPayment(orderData) {
@@ -34,6 +52,14 @@ async function startService() {
     await producer.connect();
     console.log('✅ Connected to Kafka');
 
+    // Démarrer le serveur HTTP pour les métriques
+    serve({
+      fetch: app.fetch,
+      port: 3004
+    });
+    
+    console.log('🌐 HTTP server running on http://localhost:3004 (metrics at /metrics)');
+
     // Subscribe to OrderCreated events
     await consumer.subscribe({ topics: ['orders.created'] });
 
@@ -41,6 +67,7 @@ async function startService() {
       eachMessage: async ({ topic, partition, message }) => {
         const MAX_RETRIES = 3;
         let shouldCommit = true;
+        const endTimer = createKafkaTimer(topic, 'paiement');
 
         try {
           const eventId = message.headers?.eventId?.toString();
@@ -68,6 +95,9 @@ async function startService() {
           }
 
           console.log(`📥 paiement ⬅ consumed OrderCreated: ${orderId} from ${topic} (partition ${partition}) [retry: ${retryCount}] [cache: ${deduplicator.size()}]`);
+          
+          // Métriques de consommation
+          kafkaMessagesConsumed.inc({ topic, service: 'paiement' });
 
           // Simulation du traitement avec délai
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -102,9 +132,16 @@ async function startService() {
           });
 
           console.log(`📤 paiement → produced: ${paymentResult.status} for ${orderId} to ${targetTopic}`);
+          
+          // Métriques de production et métier
+          kafkaMessagesProduced.inc({ topic: targetTopic, service: 'paiement' });
+          paymentsTotal.inc({ status: paymentResult.status.toLowerCase(), service: 'paiement' });
+          
+          endTimer(); // Fin du timer pour le processing
 
         } catch (error) {
           console.error('❌ Error processing payment message:', error.message);
+          endTimer(); // Fin du timer même en cas d'erreur
           
           const retryCount = parseInt(message.headers?.retryCount?.toString() || '0');
           
