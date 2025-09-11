@@ -19,6 +19,10 @@
     "monitoring:simple": "docker compose -f docker-compose.yml -f docker-compose.monitoring-simple.yml up -d",
     "monitoring:down": "docker compose -f docker-compose.yml -f docker-compose.monitoring.yml down",
     "setup": "npm run monitoring:up && sleep 10 && npm run topics",
+    "load-test": "node load-test.js",
+    "demo": "node load-test.js",
+    "demo-check": "node demo-check.js",
+    "demo-test": "./demo-test.sh",
     "test": "jest",
     "test:integration": "jest --testMatch='**/*.integration.test.js'"
   },
